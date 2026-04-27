@@ -150,6 +150,7 @@ Por qué un sólo DTO y no tres (decisión deliberada): `SupplierProductDTO` es 
 - **SQLite**: cero setup. Migración a MySQL/Postgres es sólo cambiar el `DB_*` del `.env`.
 - **Importación síncrona** vía `artisan tariffs:import`. El `Persister` está aislado — mover a un job encolado es cambio menor (§6).
 - **API**: `GET /api/products?brand=&reference=&per_page=` paginado (default 50, máx 200) + `GET /api/products/{brand}/{reference}` con tiers y taxes embebidos. `ProductResource` + eager loading.
+- **Validación + errores en JSON**: `ListProductsRequest` valida los query params (devuelve **422** con `{message, errors}` si vienen como array, no-numéricos, fuera de rango, etc.); `bootstrap/app.php` fuerza que **todas las respuestas de errores en `/api/*`** (404, 422, 500, 405) se rendericen como JSON, sin importar el header `Accept` del cliente. Sin esto, Laravel default devuelve HTML para 404/500 — que es lo que típicamente "explota" en clientes API. Mensajes 404 limpios: `{"message":"Product not found"}` cuando un producto no existe (vía `abort(404, ...)` en el controller, sin leakear nombres de modelos), `{"message":"Resource not found"}` cuando la URL no matchea ninguna ruta.
 
 ---
 
@@ -167,12 +168,13 @@ Por qué un sólo DTO y no tres (decisión deliberada): `SupplierProductDTO` es 
 
 ## 5. Tests
 
-13 tests, todos en verde (`php artisan test`):
+18 tests, todos en verde (`php artisan test`):
 
 - **`tests/Unit/ImporterRegistryTest`** — el registry resuelve por código y tira excepción con la lista de códigos conocidos cuando el pedido no existe. Crítico porque es la pieza que asegura OCP.
 - **`tests/Unit/AcmeImporterTest`** — parsing del formato wide: múltiples tramos de precio, dimensiones `L×A×P`, celdas vacías, taxes desde segunda hoja.
 - **`tests/Unit/GlobalSupplyImporterTest`** — parsing del formato long: agrupación por REF, extracción de unidad desde el header `Peso (kg)`, split de `Category / Sub`, IVA como columnas por país.
-- **`tests/Feature/ProductApiTest`** — listado paginado filtrado por brand; show por brand+reference con tiers y taxes embebidos; 404 en casos inexistentes.
+- **`tests/Feature/ImportCommandTest`** — end-to-end del comando de import: persistencia, idempotencia, errores limpios cuando falta `--supplier` o el código es desconocido.
+- **`tests/Feature/ProductApiTest`** — listado paginado filtrado por brand; show por brand+reference con tiers y taxes embebidos; 404 en casos inexistentes; **errores siempre en JSON**; **validación 422** para `per_page` no-numérico, fuera de rango, brand como array, page inválido.
 
 **Qué dejé afuera deliberadamente**:
 - **Autenticación**: fuera del scope del enunciado.

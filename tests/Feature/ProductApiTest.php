@@ -79,11 +79,62 @@ class ProductApiTest extends TestCase
         $res->assertJsonPath('data.taxes.0.rate', 0.21);
     }
 
-    public function test_show_returns_404_for_unknown_reference(): void
+    public function test_show_returns_clean_404_for_unknown_product(): void
     {
         $this->seedProduct('Acme', 'R-1');
 
-        $this->getJson('/api/products/Acme/NOPE')->assertNotFound();
-        $this->getJson('/api/products/UnknownBrand/R-1')->assertNotFound();
+        $this->getJson('/api/products/Acme/NOPE')
+            ->assertNotFound()
+            ->assertExactJson(['message' => 'Product not found']);
+
+        $this->getJson('/api/products/UnknownBrand/R-1')
+            ->assertNotFound()
+            ->assertExactJson(['message' => 'Product not found']);
+    }
+
+    public function test_unknown_api_route_returns_clean_404(): void
+    {
+        $this->getJson('/api/no-existe-esta-ruta')
+            ->assertNotFound()
+            ->assertExactJson(['message' => 'Resource not found']);
+    }
+
+    public function test_errors_render_as_json_for_api_routes(): void
+    {
+        // Sin pasar Accept: application/json (cliente "estilo browser").
+        $res = $this->get('/api/products/NoExiste/X');
+
+        $res->assertNotFound();
+        // Lo crítico: que sea JSON, no HTML.
+        $res->assertHeader('Content-Type', 'application/json');
+        $this->assertJson($res->getContent());
+    }
+
+    public function test_validation_rejects_non_integer_per_page(): void
+    {
+        $this->getJson('/api/products?per_page=abc')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['per_page']);
+    }
+
+    public function test_validation_rejects_per_page_out_of_range(): void
+    {
+        $this->getJson('/api/products?per_page=0')->assertStatus(422);
+        $this->getJson('/api/products?per_page=-5')->assertStatus(422);
+        $this->getJson('/api/products?per_page=999')->assertStatus(422);
+    }
+
+    public function test_validation_rejects_array_brand(): void
+    {
+        $this->getJson('/api/products?brand[]=Acme')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['brand']);
+    }
+
+    public function test_validation_rejects_invalid_page(): void
+    {
+        $this->getJson('/api/products?page=banana')->assertStatus(422);
+        $this->getJson('/api/products?page=-1')->assertStatus(422);
+        $this->getJson('/api/products?page=0')->assertStatus(422);
     }
 }
